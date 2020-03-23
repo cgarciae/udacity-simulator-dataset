@@ -167,3 +167,68 @@ def get_model(params) -> tf.keras.Model:
     model = tf.keras.Model(inputs=inputs, outputs=x, name="nvidia_net")
 
     return model
+
+
+class AttentionModule(tf.keras.layers.Layer):
+    def __init__(self, head_size, num_heads, dropout, **kwargs):
+        super().__init__(**kwargs)
+
+        self.head_size = head_size
+        self.num_heads = num_heads
+        self.dropout = dropout
+
+    def build(self, input_shape):
+
+        self.attention_layer = tfa.layers.MultiHeadAttention(
+            self.head_size, num_heads=self.num_heads, dropout=self.dropout
+        )
+        self.layer_normalization_1 = tf.keras.layers.LayerNormalization()
+
+        self.linear = tf.keras.layers.Dense(input_shape[-1])
+        self.layer_normalization_2 = tf.keras.layers.LayerNormalization()
+
+    def call(self, x):
+
+        x0 = x
+        x = self.attention_layer([x, x, x])
+        x = x0 = self.layer_normalization_1(x + x0)
+        x = self.linear(x)
+        x = tf.nn.relu(x)
+        x = self.layer_normalization_2(x + x0)
+
+        return x
+
+
+class AddPositionalEmbeddings(tf.keras.layers.Layer):
+    def build(self, input_shape):
+
+        self.positional_embeddings = self.add_weight(
+            name="positional_embeddings",
+            shape=[1, input_shape[1], input_shape[2]],
+            trainable=True,
+        )
+
+    def call(self, x):
+
+        return x + self.positional_embeddings
+
+
+class AttentionPooling(tf.keras.layers.Layer):
+    def __init__(self, num_keys, head_size, num_heads, dropout, **kwargs):
+        super().__init__(**kwargs)
+
+        self.num_keys = num_keys
+        self.head_size = head_size
+        self.num_heads = num_heads
+        self.dropout = dropout
+
+    def build(self, input_shape):
+
+        self.keys = self.add_weight("keys", shape=[1, self.num_keys, input_shape[-1]])
+
+        self.mha = tfa.layers.MultiHeadAttention(
+            head_size=self.head_size, num_heads=self.num_heads, dropout=self.dropout
+        )
+
+    def call(self, x):
+        return self.mha([self.keys, x, x])
