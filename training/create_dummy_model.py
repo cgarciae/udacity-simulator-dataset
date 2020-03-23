@@ -8,7 +8,8 @@ model = tf.keras.Sequential(
         tf.keras.layers.Conv2D(8, 3),
         tf.keras.layers.GlobalAveragePooling2D(),
         tf.keras.layers.Dense(1, name="steering"),
-    ], name="image"
+    ],
+    name="image",
 )
 
 model.save("models/dummy_model")

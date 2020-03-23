@@ -1,3 +1,17 @@
+# data
 train_split: 0.85
+n_buckets: 11
+crop_up: 60
+crop_down: 30
+steering_correction: 0.2
+image_size: [66, 200]
+steering_std: 0.01
+percent_zero: 0.15
 
+# model
+
+# training
 lr: 0.001
+batch_size: 32
+epochs: 30
+steps_per_epoch: 200

@@ -21,6 +21,8 @@ python-socketio = "^4.5.0"
 plotly = "^4.5.4"
 imbalanced-learn = "^0.6.2"
 jupyter = "^1.0.0"
+matplotlib = "^3.2.1"
+opencv-python = "^4.2.0"
 
 [tool.poetry.dev-dependencies]
 black = {version = "^19.10b0", allow-prereleases = true}

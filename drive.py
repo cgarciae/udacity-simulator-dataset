@@ -3,8 +3,9 @@ import base64
 from datetime import datetime
 import os
 import shutil
+import dicto
 
-# import cv2
+import cv2
 import typer
 
 import numpy as np
@@ -46,8 +47,7 @@ model = None
 
 controller = SimplePIController(0.1, 0.002)
 
-# CROP_UP = 50
-# CROP_DOWN = 30
+params = dicto.load("training/params.yml")
 
 
 @sio.on("telemetry")
@@ -62,11 +62,14 @@ def telemetry(sid, data):
         # The current image from the center camera of the car
         imgString = data["image"]
         image = Image.open(BytesIO(base64.b64decode(imgString)))
-        image_array = np.asarray(image).astype(np.float32)
+        image_array = np.asarray(image)
 
-        # image_array = image_array[CROP_UP:-CROP_DOWN, :, :]
-        # cv2.imshow("si",image_array[...,::-1])
-        # cv2.waitKey(1)
+        image_array = image_array[params.crop_up : -params.crop_down, :, :]
+        image_array = cv2.resize(image_array, tuple(params.image_size[::-1]))
+        image_array = cv2.cvtColor(image_array, cv2.COLOR_RGB2YUV).astype(np.float32)/255.0
+
+        cv2.imshow("Visualizer", (255*image_array[..., ::-1]).astype(np.uint8))
+        cv2.waitKey(1)
 
         preds = model(image=tf.constant(image_array[None, :, :, :]))
         steering_angle = float(preds["steering"].numpy()[0])
@@ -97,7 +100,9 @@ def send_control(steering_angle, throttle):
         skip_sid=True,
     )
 
+
 import os
+
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 

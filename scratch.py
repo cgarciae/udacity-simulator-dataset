@@ -12,4 +12,3 @@ df = dataget.image.udacity_simulator().get()
 
 # %%
 px.histogram(df, x="steering").show()
-
