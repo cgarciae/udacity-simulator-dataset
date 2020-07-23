@@ -1,22 +1,23 @@
 import argparse
 import base64
 from datetime import datetime
+from io import BytesIO
+import os
 import os
 import shutil
-import dicto
 
+from PIL import Image
 import cv2
-import typer
-
-import numpy as np
-import socketio
+import dicto
 import eventlet
 import eventlet.wsgi
-from PIL import Image
 from flask import Flask
-from io import BytesIO
-
+import numpy as np
+import socketio
 import tensorflow as tf
+import typer
+
+# os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 
 class SimplePIController:
@@ -66,9 +67,11 @@ def telemetry(sid, data):
 
         image_array = image_array[params.crop_up : -params.crop_down, :, :]
         image_array = cv2.resize(image_array, tuple(params.image_size[::-1]))
-        image_array = cv2.cvtColor(image_array, cv2.COLOR_RGB2YUV).astype(np.float32)/255.0
+        image_array = (
+            cv2.cvtColor(image_array, cv2.COLOR_RGB2YUV).astype(np.float32) / 255.0
+        )
 
-        cv2.imshow("Visualizer", (255*image_array[..., ::-1]).astype(np.uint8))
+        cv2.imshow("Visualizer", (255 * image_array[..., ::-1]).astype(np.uint8))
         cv2.waitKey(1)
 
         preds = model(image=tf.constant(image_array[None, :, :, :]))
@@ -76,7 +79,7 @@ def telemetry(sid, data):
 
         throttle = controller.update(float(speed))
 
-        print(steering_angle, throttle)
+        # print(steering_angle, throttle)
         send_control(steering_angle, throttle)
 
     else:
@@ -99,11 +102,6 @@ def send_control(steering_angle, throttle):
         },
         skip_sid=True,
     )
-
-
-import os
-
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 
 def main(model_path: str, speed: float = 22):

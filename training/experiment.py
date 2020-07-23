@@ -13,14 +13,21 @@ import tensorflow as tf
 import numpy as np
 
 # from .
-import estimator
+from . import estimator
 
 
 def main(
     params_path: Path = Path("training/params.yml"),
     cache: bool = False,
     viz: bool = False,
+    debug: bool = False,
 ):
+    if debug:
+        import debugpy
+
+        print("Waiting debuger....")
+        debugpy.listen(("localhost", 5678))
+        debugpy.wait_for_client()
 
     params = dicto.load(params_path)
 
@@ -89,6 +96,8 @@ def main(
     # Export to saved model
     save_path = f"models/{model.name}"
     model.save(save_path)
+
+    print(f"{save_path=}")
 
 
 if __name__ == "__main__":
