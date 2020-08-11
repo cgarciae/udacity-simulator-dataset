@@ -1,5 +1,6 @@
 import argparse
 import base64
+import imp
 import os
 import shutil
 import time
@@ -16,6 +17,8 @@ import tensorflow as tf
 import typer
 from flask import Flask
 from PIL import Image
+
+import elegy
 
 # os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
@@ -75,8 +78,9 @@ def telemetry(sid, data):
         cv2.imshow("Visualizer", (255 * image_array[..., ::-1]).astype(np.uint8))
         cv2.waitKey(1)
 
-        preds = model(image=tf.constant(image_array[None, :, :, :]))
-        steering_angle = float(preds["steering"].numpy()[0])
+        preds = model.predict(image_array[None, :, :, :])
+        print(preds[0])
+        steering_angle = float(preds[0])
 
         throttle = controller.update(float(speed))
 
@@ -109,17 +113,14 @@ def main(model_path: str, speed: float = 22):
     global app
     global model
 
-    model_obj = tf.saved_model.load(model_path)
-    model = model_obj.signatures["serving_default"]
+    model = elegy.model.load(model_path)
 
     # print(model.structured_input_signature)
     # print(model.structured_outputs)
     for _ in range(10):
         init = time.time()
-        preds = model(
-            image=tf.constant(
-                np.random.randint(0, 255, size=(1, 66, 200, 3)).astype(np.float32)
-            )
+        preds = model.predict(
+            np.random.randint(0, 255, size=(1, 66, 200, 3)).astype(np.float32)
         )
         print(f"Elapsed {time.time() - init}")
 

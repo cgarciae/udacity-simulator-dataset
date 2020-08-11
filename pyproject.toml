@@ -17,12 +17,13 @@ plotly = "^4.5.4"
 imbalanced-learn = "^0.6.2"
 jupyter = "^1.0.0"
 matplotlib = "^3.2.1"
-opencv-python = "^4.2.0"
+opencv-python = ">=4.2,<4.3"
 # tensorflow-addons = "^0.10.0"
 python-socketio = "^4.6.0"
 # tensorflow = "^2.2.0"
 debugpy = "^1.0.0-beta.9"
 tensorflow_hub = "^0.8.0"
+elegy = {path = "../elegy"}
 
 [tool.poetry.dev-dependencies]
 black = {version = "^19.10b0", allow-prereleases = true}

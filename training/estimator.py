@@ -1,14 +1,17 @@
+import imp
 import os
 import shutil
 import typing as tp
 from pathlib import Path
 
 import cv2
+import jax
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 from imblearn.over_sampling import RandomOverSampler
 
+import elegy
 import tensorflow_hub as hub
 
 
@@ -81,15 +84,14 @@ def preprocess(df, params, mode, directory=None):
 def get_dataset(df, params, mode):
     dataset = tf.data.Dataset.from_tensor_slices(df.to_dict(orient="list"))
 
-    if mode == "train":
-        dataset = dataset.repeat()
+    dataset = dataset.repeat()
 
-        # def filter_fn(row):
-        #     return tf.math.not_equal(row["original_steering"], 0) | (
-        #         tf.random.uniform(shape=()) < params.percent_zero
-        #     )
+    # def filter_fn(row):
+    #     return tf.math.not_equal(row["original_steering"], 0) | (
+    #         tf.random.uniform(shape=()) < params.percent_zero
+    #     )
 
-        # dataset = dataset.filter(filter_fn)
+    # dataset = dataset.filter(filter_fn)
 
     def preprocess_image(x):
         x = x[params.crop_up : -params.crop_down, :, :]
@@ -138,8 +140,8 @@ def get_simclr(params) -> tf.keras.Model:
     model = tf.keras.Sequential(
         [
             embed,
-            # tf.keras.layers.Dense(16, activation="relu"),
-            tf.keras.layers.Dense(1, name="steering", use_bias=False),
+            # tf.keras.layers.Linear(16, activation="relu"),
+            tf.keras.layers.Linear(1, name="steering", use_bias=False),
         ],
         name="simclr_linear",
     )
@@ -148,43 +150,34 @@ def get_simclr(params) -> tf.keras.Model:
     return model
 
 
-def get_model(params) -> tf.keras.Model:
+def get_model(params) -> elegy.Module:
 
-    x = inputs = tf.keras.Input(
-        shape=(params.image_size[0], params.image_size[1], 3), name="image"
+    return elegy.nn.Sequential(
+        lambda: [
+            elegy.nn.Conv2D(24, [5, 5], stride=2, padding="valid"),
+            elegy.nn.BatchNormalization(),
+            jax.nn.relu,
+            elegy.nn.Conv2D(36, [5, 5], stride=2, padding="valid"),
+            elegy.nn.BatchNormalization(),
+            jax.nn.relu,
+            elegy.nn.Conv2D(48, [5, 5], stride=2, padding="valid"),
+            elegy.nn.BatchNormalization(),
+            jax.nn.relu,
+            elegy.nn.Conv2D(64, [3, 3], padding="valid"),
+            elegy.nn.BatchNormalization(),
+            jax.nn.relu,
+            elegy.nn.Conv2D(64, [3, 3], padding="valid"),
+            elegy.nn.BatchNormalization(),
+            jax.nn.relu,
+            # elegy.nn.GlobalAveragePooling2D(),
+            elegy.nn.Flatten(),
+            elegy.nn.Dropout(0.4),
+            elegy.nn.Linear(10),
+            elegy.nn.BatchNormalization(),
+            jax.nn.relu,
+            elegy.nn.Dropout(0.4),
+            elegy.nn.Linear(1, with_bias=False, name="steering"),
+        ],
+        name="pilot-net-elegy",
     )
 
-    x = tf.keras.layers.Conv2D(24, [5, 5], strides=2)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.nn.relu(x)
-
-    x = tf.keras.layers.Conv2D(36, [5, 5], strides=2)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.nn.relu(x)
-
-    x = tf.keras.layers.Conv2D(48, [5, 5], strides=2)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.nn.relu(x)
-
-    x = tf.keras.layers.Conv2D(64, [3, 3])(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.nn.relu(x)
-
-    x = tf.keras.layers.Conv2D(64, [3, 3])(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.nn.relu(x)
-
-    # x = tf.keras.layers.GlobalAveragePooling2D()(x)
-    x = tf.keras.layers.Flatten()(x)
-    x = tf.keras.layers.Dropout(0.4)(x)
-
-    x = tf.keras.layers.Dense(10)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.nn.relu(x)
-    x = tf.keras.layers.Dropout(0.4)(x)
-
-    x = tf.keras.layers.Dense(1, name="steering", use_bias=False)(x)
-
-    model = tf.keras.Model(inputs=inputs, outputs=x, name="nvidia_net")
-
-    return model

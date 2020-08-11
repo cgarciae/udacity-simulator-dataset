@@ -1,19 +1,20 @@
 import os
-
-# os.environ["CUDA_VISIBLE_DEVICES"] = ""
-
 from pathlib import Path
-
 
 import dataget
 import dicto
-import pandas as pd
-import typer
-import tensorflow as tf
 import numpy as np
+import pandas as pd
+import tensorflow as tf
+import typer
+from jax.experimental import optix
+
+import elegy
 
 # from .
 from . import estimator
+
+# os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 
 def main(
@@ -79,30 +80,33 @@ def main(
 
         return
 
-    model = estimator.get_model(params)
+    module = estimator.get_model(params)
     # model = estimator.get_simclr(params)
 
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(params.lr), loss="mse", metrics=["mae"],
+    model = elegy.Model(
+        module,
+        loss=elegy.losses.MeanSquaredError(),
+        metrics=elegy.metrics.MeanAbsoluteError(),
+        optimizer=optix.adam(params.lr),
     )
 
-    model.summary()
-    # exit()
+    ds_train_iterator = ds_train.as_numpy_iterator()
+    x_sample, *rest = next(ds_train_iterator)
+    model.summary(x_sample)
 
     model.fit(
-        ds_train,
+        ds_train_iterator,
         epochs=params.epochs,
         steps_per_epoch=params.steps_per_epoch,
-        validation_data=ds_test,
+        validation_data=ds_test.as_numpy_iterator(),
+        validation_steps=params.validation_steps,
         callbacks=[
-            tf.keras.callbacks.TensorBoard(
-                log_dir=str(Path("summaries") / Path(model.name)), profile_batch=0
-            )
+            elegy.callbacks.TensorBoard(logdir=str(Path("summaries") / module.name))
         ],
     )
 
     # Export to saved model
-    save_path = f"models/{model.name}"
+    save_path = f"models/{module.name}"
     model.save(save_path)
 
     # print(f"{save_path=}")
