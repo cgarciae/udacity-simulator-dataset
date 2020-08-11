@@ -1,8 +1,8 @@
 [tool.poetry]
-name = "udacity-simulator-dataset"
-version = "0.1.0"
+name = "self-driving"
+version = "0.0.1"
 description = ""
-authors = ["Cristian Garcia <cgarcia.e88@gmail.com>"]
+authors = ["Carlos Alvarez <candres.alv@gmail.com>","Cristian Garcia <cgarcia.e88@gmail.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.7"
@@ -18,14 +18,16 @@ imbalanced-learn = "^0.6.2"
 jupyter = "^1.0.0"
 matplotlib = "^3.2.1"
 opencv-python = "^4.2.0"
-tensorflow-addons = "^0.10.0"
+# tensorflow-addons = "^0.10.0"
 python-socketio = "^4.6.0"
-tensorflow = "^2.2.0"
+# tensorflow = "^2.2.0"
 debugpy = "^1.0.0-beta.9"
+tensorflow_hub = "^0.8.0"
 
 [tool.poetry.dev-dependencies]
 black = {version = "^19.10b0", allow-prereleases = true}
 pylint = "^2.4.4"
+flake8 = "^3.8.3"
 
 [build-system]
 requires = ["poetry>=0.12"]

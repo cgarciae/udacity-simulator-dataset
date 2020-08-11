@@ -1,12 +1,15 @@
-import tensorflow as tf
-import tensorflow_addons as tfa
-from imblearn.over_sampling import RandomOverSampler
-import pandas as pd
-from pathlib import Path
-import typing as tp
-import numpy as np
+import os
 import shutil
+import typing as tp
+from pathlib import Path
+
 import cv2
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+from imblearn.over_sampling import RandomOverSampler
+
+import tensorflow_hub as hub
 
 
 def split(df, params):
@@ -46,7 +49,11 @@ def as_single_image(df, column, params):
     return df
 
 
-def preprocess(df, params, mode):
+def preprocess(df, params, mode, directory=None):
+
+    if directory is not None:
+        for column in ["left", "center", "right"]:
+            df[column] = df[column].apply(lambda x: os.path.join(directory, x))
 
     if mode == "train":
         df = balance(df, params)
@@ -87,7 +94,8 @@ def get_dataset(df, params, mode):
     def preprocess_image(x):
         x = x[params.crop_up : -params.crop_down, :, :]
         x = cv2.resize(x, tuple(params.image_size[::-1]))
-        x = cv2.cvtColor(x, cv2.COLOR_RGB2YUV).astype(np.float32) / 255.0
+        # x = cv2.cvtColor(x, cv2.COLOR_RGB2YUV).astype(np.float32) / 255.0
+        x = x.astype(np.float32) / 255.0
 
         return x
 
@@ -100,9 +108,9 @@ def get_dataset(df, params, mode):
 
         image = tf.numpy_function(preprocess_image, [image], tf.float32)
         image.set_shape((params.image_size[0], params.image_size[1], 3))
-        steering = row["steering"] + tf.random.normal(
-            shape=(), stddev=params.steering_std
-        )
+        # steering = row["steering"] + tf.random.normal(
+        #     shape=(), stddev=params.steering_std
+        # )
 
         if mode == "train":
             if tf.equal(row["original_steering"], 0):
@@ -121,6 +129,23 @@ def get_dataset(df, params, mode):
     dataset = dataset.prefetch(1)
 
     return dataset
+
+
+def get_simclr(params) -> tf.keras.Model:
+    hub_url = "models/ResNet50_1x/hub"
+    embed = hub.KerasLayer(hub_url, tags={"train"})
+
+    model = tf.keras.Sequential(
+        [
+            embed,
+            # tf.keras.layers.Dense(16, activation="relu"),
+            tf.keras.layers.Dense(1, name="steering", use_bias=False),
+        ],
+        name="simclr_linear",
+    )
+    model.build((None, 224, 224, 3))
+    # model.summary()
+    return model
 
 
 def get_model(params) -> tf.keras.Model:
@@ -149,111 +174,17 @@ def get_model(params) -> tf.keras.Model:
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.nn.relu(x)
 
-    x = tf.reshape(x, [-1, np.prod(x.shape[1:-1]), x.shape[-1]])
-
-    x = AddPositionalEmbeddings()(x)
-    # x = SelfAttentionBlock(32, head_size=16, num_heads=6, dropout=0.2)(x)
-    x = SelfAttentionBlock(32, head_size=16, num_heads=12, dropout=0.2)(x)
-
-    x = AddPositionalEmbeddings()(x)
-    x = AttentionPooling(32, n_queries=5, head_size=16, num_heads=12, dropout=0.2)(x)
-
-    # x = x[:, 0]
-    x = tf.keras.layers.GlobalAveragePooling1D()(x)
+    # x = tf.keras.layers.GlobalAveragePooling2D()(x)
+    x = tf.keras.layers.Flatten()(x)
+    x = tf.keras.layers.Dropout(0.4)(x)
 
     x = tf.keras.layers.Dense(10)(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.nn.relu(x)
+    x = tf.keras.layers.Dropout(0.4)(x)
 
-    x = tf.keras.layers.Dense(1, name="steering")(x)
+    x = tf.keras.layers.Dense(1, name="steering", use_bias=False)(x)
 
     model = tf.keras.Model(inputs=inputs, outputs=x, name="nvidia_net")
 
     return model
-
-
-class AddPositionalEmbeddings(tf.keras.layers.Layer):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-        self.embeddings: tp.Optional[tf.Variable] = None
-
-    def build(self, input_shape):
-
-        input_shape = list(input_shape)
-
-        self.embeddings = self.add_weight(
-            name="key_kernel", shape=[1] + input_shape[1:]
-        )
-
-        super().build(input_shape)
-
-    def call(self, inputs):
-        return inputs + self.embeddings
-
-
-class SelfAttentionBlock(tf.keras.layers.Layer):
-    def __init__(
-        self,
-        output_size: int,
-        head_size: int = 16,
-        num_heads: int = 3,
-        dropout: float = 0.0,
-        activation: tp.Union["str", tp.Callable] = "relu",
-        **kwargs
-    ):
-        super().__init__(**kwargs)
-
-        self.mha = tfa.layers.MultiHeadAttention(
-            head_size=head_size, num_heads=num_heads, dropout=dropout
-        )
-        self.dense = tf.keras.layers.Dense(output_size, activation=activation)
-
-    def call(self, inputs):
-
-        x = self.mha([inputs, inputs])
-        x = self.dense(x)
-
-        return x
-
-
-class AttentionPooling(tf.keras.layers.Layer):
-    def __init__(
-        self,
-        output_size: int,
-        n_queries: int,
-        head_size: int = 16,
-        num_heads: int = 3,
-        dropout: float = 0.0,
-        activation: tp.Union["str", tp.Callable] = "relu",
-        **kwargs
-    ):
-        super().__init__(**kwargs)
-
-        self.n_queries = n_queries
-        self.mha = tfa.layers.MultiHeadAttention(
-            head_size=head_size, num_heads=num_heads, dropout=dropout
-        )
-        self.dense = tf.keras.layers.Dense(output_size, activation=activation)
-        self.query: tp.Optional[tf.Variable] = None
-
-    def build(self, input_shape):
-
-        num_features = input_shape[-1]
-
-        self.query = self.add_weight(
-            name="key_kernel", shape=[1, self.n_queries, num_features]
-        )
-
-        super().build(input_shape)
-
-    def call(self, inputs):
-
-        query = tf.tile(
-            self.query, [tf.shape(inputs)[0]] + [1] * (len(inputs.shape) - 1)
-        )
-
-        x = self.mha([query, inputs])
-        x = self.dense(x)
-
-        return x

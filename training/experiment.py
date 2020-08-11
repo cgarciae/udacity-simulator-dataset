@@ -42,9 +42,15 @@ def main(
 
     else:
         df = dataget.image.udacity_simulator().get()
+        # header = ["center", "left", "right", "steering", "throttle", "break", "speed"]
+        # df = pd.read_csv(
+        #     os.path.join(params["dataset"], "driving_log.csv"), names=header
+        # )
 
         df_train, df_test = estimator.split(df, params)
 
+        # df_train = estimator.preprocess(df_train, params, "train", params["dataset"])
+        # df_test = estimator.preprocess(df_test, params, "test", params["dataset"])
         df_train = estimator.preprocess(df_train, params, "train")
         df_test = estimator.preprocess(df_test, params, "test")
 
@@ -65,21 +71,23 @@ def main(
         import matplotlib.pyplot as plt
 
         iteraror = iter(ds_train)
-        image_batch, steer_batch = next(iteraror)
-        for image, steer in zip(image_batch, steer_batch):
-            plt.imshow(image.numpy().astype(np.uint8))
-            plt.title(f"Steering angle: {steer}")
+        image_batch, steer_batch, weights = next(iteraror)
+        for image, steer, weight in zip(image_batch, steer_batch, weights):
+            plt.imshow(image.numpy())
+            plt.title(f"Steering angle: {steer} weight {weight}")
             plt.show()
 
         return
 
     model = estimator.get_model(params)
+    # model = estimator.get_simclr(params)
 
     model.compile(
         optimizer=tf.keras.optimizers.Adam(params.lr), loss="mse", metrics=["mae"],
     )
 
     model.summary()
+    # exit()
 
     model.fit(
         ds_train,
@@ -97,7 +105,7 @@ def main(
     save_path = f"models/{model.name}"
     model.save(save_path)
 
-    print(f"{save_path=}")
+    # print(f"{save_path=}")
 
 
 if __name__ == "__main__":

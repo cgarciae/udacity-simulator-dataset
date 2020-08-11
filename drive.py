@@ -1,21 +1,21 @@
 import argparse
 import base64
-from datetime import datetime
-from io import BytesIO
-import os
 import os
 import shutil
+import time
+from datetime import datetime
+from io import BytesIO
 
-from PIL import Image
 import cv2
 import dicto
 import eventlet
 import eventlet.wsgi
-from flask import Flask
 import numpy as np
 import socketio
 import tensorflow as tf
 import typer
+from flask import Flask
+from PIL import Image
 
 # os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
@@ -67,9 +67,10 @@ def telemetry(sid, data):
 
         image_array = image_array[params.crop_up : -params.crop_down, :, :]
         image_array = cv2.resize(image_array, tuple(params.image_size[::-1]))
-        image_array = (
-            cv2.cvtColor(image_array, cv2.COLOR_RGB2YUV).astype(np.float32) / 255.0
-        )
+        # image_array = (
+        #     cv2.cvtColor(image_array, cv2.COLOR_RGB2YUV).astype(np.float32) / 255.0
+        # )
+        image_array = image_array.astype(np.float32) / 255.0
 
         cv2.imshow("Visualizer", (255 * image_array[..., ::-1]).astype(np.uint8))
         cv2.waitKey(1)
@@ -113,8 +114,15 @@ def main(model_path: str, speed: float = 22):
 
     # print(model.structured_input_signature)
     # print(model.structured_outputs)
-    # preds = model(image=tf.constant(np.random.randint(0,255,size=(1,32,32,3)).astype(np.float32)))
-    # print(preds)
+    for _ in range(10):
+        init = time.time()
+        preds = model(
+            image=tf.constant(
+                np.random.randint(0, 255, size=(1, 66, 200, 3)).astype(np.float32)
+            )
+        )
+        print(f"Elapsed {time.time() - init}")
+
     # exit()
 
     controller.set_desired(speed)

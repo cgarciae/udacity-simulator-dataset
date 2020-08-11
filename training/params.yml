@@ -1,10 +1,13 @@
 # data
+# dataset: "data_mine"
+dataset: "data"
 train_split: 0.85
 n_buckets: 11
-crop_up: 60
+crop_up: 50
 crop_down: 30
-steering_correction: 0.12
+steering_correction: 0.2
 image_size: [66, 200]
+# image_size: [224, 224]
 steering_std: 0.01
 percent_zero: 0.15
 
