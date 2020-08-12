@@ -181,9 +181,24 @@ class MixtureModule(elegy.Module):
         return y, probs
 
 
+def safe_log(x):
+    return jnp.log(jnp.maximum(x, 1e-6))
+
+
 class MixtureLoss(elegy.Loss):
     def call(self, y_true, y_pred):
         y, probs = y_pred
+
+        # preds = jnp.einsum("...i, ...j -> ...", probs, y[..., 0])
+        # return elegy.losses.MeanSquaredError()(y_true, preds)
+
+        # return -safe_log(
+        #     jnp.sum(
+        #         probs
+        #         * jax.scipy.stats.norm.pdf(y_true[..., None], loc=y[..., 0], scale=1.0),
+        #         axis=1,
+        #     ),
+        # )
 
         components_loss = -jax.scipy.stats.norm.logpdf(
             y_true[..., None], loc=y[..., 0], scale=1.0

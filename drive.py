@@ -85,14 +85,11 @@ def telemetry(sid, data):
         angles = angles[0, :, 0]
         preds = preds[0]
 
-        # print(angles.shape, preds.shape)
+        # if np.max(preds) > 0.5:
+        #     steering_angle = angles[np.argmax(preds)]
+        # else:
 
-        # steering_angle = [-0.3, 0, 0.3][int(np.argmax(preds))]
-
-        if np.max(preds) > 0.5:
-            steering_angle = angles[np.argmax(preds)]
-        else:
-            steering_angle = np.dot(angles, preds.T)
+        steering_angle = np.dot(angles, preds.T)
 
         # print(steering_angle)
         # print(np.stack([preds, angles], axis=0))
