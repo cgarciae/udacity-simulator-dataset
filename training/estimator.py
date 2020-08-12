@@ -6,13 +6,15 @@ from pathlib import Path
 
 import cv2
 import jax
+import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+import tensorflow_hub as hub
 from imblearn.over_sampling import RandomOverSampler
+from jax.experimental import optix
 
 import elegy
-import tensorflow_hub as hub
 
 
 def split(df, params):
@@ -29,15 +31,18 @@ def balance(df, params):
 
     df["original_steering"] = df["steering"]
 
+    # is_zero = df.steering == 0
+    # df_zeros = df[is_zero].sample(frac=0.25)
+    # df_nonzero = df[~is_zero]
+    # df = pd.concat([df_zeros, df_nonzero], axis=0)
+
     # bins = np.linspace(-0.9, 0.9, params.n_buckets)
     # df["bucket"] = np.digitize(df["steering"], bins)
     # df, _ = RandomOverSampler().fit_resample(df, df["bucket"])
 
     df["flipped"] = 0
-
     df_flipped = df.copy()
     df_flipped["flipped"] = 1
-
     df = pd.concat([df, df_flipped])
 
     return df
@@ -77,6 +82,7 @@ def preprocess(df, params, mode, directory=None):
         df["flipped"] = 0
 
     df = df.sample(frac=1)
+    df["angle_cat"] = np.digitize(df["steering"], [-0.1, 0.1])
 
     return df
 
@@ -114,21 +120,22 @@ def get_dataset(df, params, mode):
         #     shape=(), stddev=params.steering_std
         # )
 
-        if mode == "train":
-            if tf.equal(row["original_steering"], 0):
-                sample_weight = params.percent_zero
-            else:
-                sample_weight = 1.0
+        # if mode == "train":
+        #     if tf.equal(row["steering"], 0):
+        #         sample_weight = params.percent_zero
+        #     else:
+        #         sample_weight = 1.0
 
-            return image, row["steering"], sample_weight
-        else:
-            return image, row["steering"]
+        #     return image, row["steering"], sample_weight
+
+        return image, row["steering"]
 
     dataset = dataset.map(load_row, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     dataset = dataset.shuffle(100)
 
     dataset = dataset.batch(params.batch_size, drop_remainder=True)
     dataset = dataset.prefetch(1)
+    dataset = dataset.as_numpy_iterator()
 
     return dataset
 
@@ -150,9 +157,64 @@ def get_simclr(params) -> tf.keras.Model:
     return model
 
 
-def get_model(params) -> elegy.Module:
+class MixtureModule(elegy.Module):
+    def __init__(
+        self,
+        k: int,
+        expert_fn: tp.Callable[[], elegy.Module],
+        gating_fn: tp.Callable[[], elegy.Module],
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.k = k
+        self.expert_fn = expert_fn
+        self.gating_fn = gating_fn
 
-    return elegy.nn.Sequential(
+    def call(self, x):
+
+        y: np.ndarray = jnp.stack(
+            [self.expert_fn()(x) for _ in range(self.k)], axis=1,
+        )
+
+        probs = self.gating_fn()(x)
+
+        return y, probs
+
+
+class MixtureLoss(elegy.Loss):
+    def call(self, y_true, y_pred):
+        y, probs = y_pred
+
+        components_loss = -jax.scipy.stats.norm.logpdf(
+            y_true[..., None], loc=y[..., 0], scale=1.0
+        )
+
+        mixture_loss = jnp.min(components_loss, axis=1)
+        indexes = jnp.argmin(components_loss, axis=1)
+
+        cce = elegy.losses.sparse_categorical_crossentropy(indexes, probs)
+
+        return dict(assignments=cce, mixture=mixture_loss)
+
+
+class MixtureMetrics(elegy.metrics.SparseCategoricalAccuracy):
+    def call(self, y_true, y_pred):
+        y, probs = y_pred
+
+        components_loss = -jax.scipy.stats.norm.logpdf(
+            y_true[..., None], loc=y[..., 0], scale=1.0
+        )
+        # components_loss = jnp.square(y_true - y[..., 0])
+
+        mixture_loss = jnp.min(components_loss, axis=1)
+        indexes = jnp.argmin(components_loss, axis=1)
+
+        return super().call(indexes, probs)
+
+
+def get_model(params, eager) -> elegy.Model:
+
+    module = elegy.nn.Sequential(
         lambda: [
             elegy.nn.Conv2D(24, [5, 5], stride=2, padding="valid"),
             elegy.nn.BatchNormalization(),
@@ -171,13 +233,38 @@ def get_model(params) -> elegy.Module:
             jax.nn.relu,
             # elegy.nn.GlobalAveragePooling2D(),
             elegy.nn.Flatten(),
-            elegy.nn.Dropout(0.4),
-            elegy.nn.Linear(10),
+            # elegy.nn.Dropout(0.4),
+            elegy.nn.Linear(100),
             elegy.nn.BatchNormalization(),
             jax.nn.relu,
-            elegy.nn.Dropout(0.4),
-            elegy.nn.Linear(1, with_bias=False, name="steering"),
+            MixtureModule(
+                k=5,
+                expert_fn=lambda: elegy.nn.Sequential(
+                    lambda: [
+                        elegy.nn.Linear(10),
+                        elegy.nn.BatchNormalization(),
+                        jax.nn.relu,
+                        elegy.nn.Linear(1),
+                    ]
+                ),
+                gating_fn=lambda: elegy.nn.Sequential(
+                    lambda: [
+                        elegy.nn.Linear(10),
+                        elegy.nn.BatchNormalization(),
+                        jax.nn.relu,
+                        elegy.nn.Linear(5),
+                        jax.nn.softmax,
+                    ]
+                ),
+            ),
         ],
         name="pilot-net-elegy",
     )
 
+    return elegy.Model(
+        module,
+        loss=MixtureLoss(),
+        metrics=MixtureMetrics(),
+        optimizer=optix.adam(params.lr),
+        run_eagerly=eager,
+    )

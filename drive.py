@@ -78,10 +78,26 @@ def telemetry(sid, data):
         cv2.imshow("Visualizer", (255 * image_array[..., ::-1]).astype(np.uint8))
         cv2.waitKey(1)
 
-        preds = model.predict(image_array[None, :, :, :])
-        print(preds[0])
-        steering_angle = float(preds[0])
+        angles, preds = model.predict(image_array[None, :, :, :])
 
+        # print(angles, preds)
+
+        angles = angles[0, :, 0]
+        preds = preds[0]
+
+        # print(angles.shape, preds.shape)
+
+        # steering_angle = [-0.3, 0, 0.3][int(np.argmax(preds))]
+
+        if np.max(preds) > 0.5:
+            steering_angle = angles[np.argmax(preds)]
+        else:
+            steering_angle = np.dot(angles, preds.T)
+
+        # print(steering_angle)
+        # print(np.stack([preds, angles], axis=0))
+
+        steering_angle = float(steering_angle)
         throttle = controller.update(float(speed))
 
         # print(steering_angle, throttle)
@@ -109,9 +125,16 @@ def send_control(steering_angle, throttle):
     )
 
 
-def main(model_path: str, speed: float = 22):
+def main(model_path: str, speed: float = 22, debug: bool = False):
     global app
     global model
+
+    if debug:
+        import debugpy
+
+        print("Waiting debuger....")
+        debugpy.listen(("localhost", 5678))
+        debugpy.wait_for_client()
 
     model = elegy.model.load(model_path)
 
